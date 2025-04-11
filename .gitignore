@@ -1,0 +1,7 @@
+/.idea
+/vendor
+
+/cert/*
+.DS_Store
+.vscode
+
