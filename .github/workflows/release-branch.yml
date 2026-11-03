@@ -35,7 +35,7 @@ jobs:
             head_ref="${BASH_REMATCH[2]}"
           else
             for attempt in 1 2 3; do
-              pr=$(gh api "repos/$REPO/commits/$MERGE_SHA/pulls" --jq '.[0] // {} | [.number // "", .head.ref // ""] | @tsv')
+              pr=$(gh api "repos/$REPO/commits/$MERGE_SHA/pulls" --jq '.[0] // {} | [.number // "", .head.ref // ""] | @tsv' || true)
               IFS=$'\t' read -r pr_number head_ref <<< "$pr"
               [[ -n "$pr_number" ]] && break
               sleep 10
@@ -51,9 +51,9 @@ jobs:
           if [[ "$head_ref" != hotfix/* ]]; then
             branch="release-$(date +%d-%m-%y)"
             if git rev-parse -q --verify "origin/$branch" >/dev/null; then
-              git switch -c "$branch" "origin/$branch"
+              git switch -C "$branch" "origin/$branch"
               if ! git merge --no-edit "$MERGE_SHA"; then
-                git merge --abort
+                git merge --abort || true
                 comment ":x: No se pudo actualizar \`$branch\` con este merge por conflictos. Hay que hacerlo a mano."
                 exit 1
               fi
@@ -75,7 +75,7 @@ jobs:
             exit 1
           fi
 
-          git switch -c "$release" "origin/$release"
+          git switch -C "$release" "origin/$release"
           mainline=()
           if (( $(git rev-list --parents -n1 "$MERGE_SHA" | wc -w) > 2 )); then
             mainline=(-m 1)
@@ -85,7 +85,7 @@ jobs:
             git push origin "HEAD:refs/heads/$release"
             comment ":white_check_mark: Hotfix bajado a \`$release\`."
           else
-            git cherry-pick --abort
+            git cherry-pick --abort || true
             comment ":x: El hotfix tiene conflictos con \`$release\` y no se bajó. Hay que hacerlo a mano."
             exit 1
           fi
