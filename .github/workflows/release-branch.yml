@@ -28,8 +28,19 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          pr=$(gh api "repos/$REPO/commits/$MERGE_SHA/pulls" --jq '.[0] // {} | [.number // "", .head.ref // ""] | @tsv')
-          IFS=$'\t' read -r pr_number head_ref <<< "$pr"
+          pr_number=""
+          head_ref=""
+          if [[ "$(git log -1 --format=%s "$MERGE_SHA")" =~ ^Merge\ pull\ request\ \#([0-9]+)\ from\ [^/]+/(.+)$ ]]; then
+            pr_number="${BASH_REMATCH[1]}"
+            head_ref="${BASH_REMATCH[2]}"
+          else
+            for attempt in 1 2 3; do
+              pr=$(gh api "repos/$REPO/commits/$MERGE_SHA/pulls" --jq '.[0] // {} | [.number // "", .head.ref // ""] | @tsv')
+              IFS=$'\t' read -r pr_number head_ref <<< "$pr"
+              [[ -n "$pr_number" ]] && break
+              sleep 10
+            done
+          fi
 
           comment() {
             if [[ -n "$pr_number" ]]; then
@@ -39,8 +50,18 @@ jobs:
 
           if [[ "$head_ref" != hotfix/* ]]; then
             branch="release-$(date +%d-%m-%y)"
-            git push --force origin "$MERGE_SHA:refs/heads/$branch"
-            echo "$branch -> $MERGE_SHA"
+            if git rev-parse -q --verify "origin/$branch" >/dev/null; then
+              git switch -c "$branch" "origin/$branch"
+              if ! git merge --no-edit "$MERGE_SHA"; then
+                git merge --abort
+                comment ":x: No se pudo actualizar \`$branch\` con este merge por conflictos. Hay que hacerlo a mano."
+                exit 1
+              fi
+              git push origin "HEAD:refs/heads/$branch"
+            else
+              git push origin "$MERGE_SHA:refs/heads/$branch"
+            fi
+            echo "$branch -> $(git rev-parse HEAD)"
             exit 0
           fi
 
